@@ -1,45 +1,21 @@
-import _generate from "@babel/generator";
-import { parse } from "@babel/parser";
-import _traverse from "@babel/traverse";
-import * as t from "@babel/types";
-import * as fs from "fs";
+import {parse} from "@babel/parser";
+import {walk} from "estree-walker";
+import MagicString from "magic-string";
 import * as nodePath from "path";
 
-const traverse = (_traverse as any).default || _traverse;
-const generate = (_generate as any).default || _generate;
+const validExtensions = new Set([".jsx", ".tsx"]);
 
-export interface JSXTaggerOptions {
-  /**
-   * Prefix for data attributes
-   * @default 'data-platform'
-   */
-  prefix?: string;
-
-  /**
-   * Whether to enable the plugin
-   * @default true in development, false in production
-   */
-  enabled?: boolean;
-
-  /**
-   * Include props snapshot in attributes
-   * @default false
-   */
-  includeProps?: boolean;
-
-  /**
-   * Custom filter function to determine which files to process
-   * @default processes .jsx, .tsx files
-   */
-  include?: (id: string) => boolean;
-}
-
-export default function jsxTagger(options: JSXTaggerOptions = {}) {
-  const {include = (id: string) => /\.(jsx|tsx)$/.test(id)} = options;
-
-  const includeProps = true;
+export default function jsxTagger() {
   const prefix = "data-simplify";
+  const include = (id: string) =>
+    validExtensions.has(nodePath.extname(id)) && !id.includes("node_modules");
   let isEnabled = true;
+  const includeProps = true;
+  const stats = {
+    totalFiles: 0,
+    processedFiles: 0,
+    totalElements: 0,
+  };
 
   return {
     name: "jsx-tagger",
@@ -56,137 +32,170 @@ export default function jsxTagger(options: JSXTaggerOptions = {}) {
         return null;
       }
 
-      let originalCode: string;
-      try {
-        originalCode = fs.readFileSync(id, "utf-8");
-      } catch (error) {
-        originalCode = code;
-      }
+      stats.totalFiles++;
+      const relativePath = nodePath.relative(process.cwd(), id);
 
       try {
-        const ast = parse(originalCode, {
-          sourceType: "module",
-          plugins: ["jsx", "typescript", "decorators-legacy"],
-          ranges: true,
-        });
+        const parserOptions = {
+          sourceType: "module" as const,
+          plugins: ["jsx", "typescript"] as any[],
+        };
 
-        let modified = false;
+        const ast = parse(code, parserOptions);
+        const magicString = new MagicString(code);
+        let changedElementsCount = 0;
+        let currentElement: any = null;
 
-        traverse(ast, {
-          JSXElement(path: any) {
-            const element = path.node;
-            const openingElement = element.openingElement;
-
-            const hasOurAttributes = openingElement.attributes.some(
-              (attr: any) =>
-                t.isJSXAttribute(attr) &&
-                t.isJSXIdentifier(attr.name) &&
-                attr.name.name.startsWith(prefix)
-            );
-
-            if (hasOurAttributes) {
-              return;
+        walk(ast as any, {
+          enter(node: any) {
+            if (node.type === "JSXElement") {
+              currentElement = node;
             }
 
-            const loc = element.loc;
-            if (!loc) return;
+            if (node.type === "JSXOpeningElement") {
+              const jsxNode = node;
+              let elementName: string;
 
-            const line = loc.start.line;
-            const column = loc.start.column + 1;
+              if (jsxNode.name.type === "JSXIdentifier") {
+                elementName = jsxNode.name.name;
+              } else if (jsxNode.name.type === "JSXMemberExpression") {
+                const memberExpr = jsxNode.name;
+                elementName = `${memberExpr.object.name}.${memberExpr.property.name}`;
+              } else {
+                return;
+              }
 
-            const filePath = nodePath.relative(process.cwd(), id);
-            const fileName = nodePath.basename(filePath);
+              if (
+                elementName === "Fragment" ||
+                elementName === "React.Fragment"
+              ) {
+                return;
+              }
 
-            const elementName = t.isJSXIdentifier(openingElement.name)
-              ? openingElement.name.name
-              : "unknown";
+              const hasOurAttributes = jsxNode.attributes.some(
+                (attr: any) =>
+                  attr.type === "JSXAttribute" &&
+                  attr.name.name.startsWith(prefix)
+              );
 
-            const uniqueId = `${filePath}:${line}:${column}`;
+              if (hasOurAttributes) {
+                return;
+              }
 
-            const attributesToAdd = [
-              t.jsxAttribute(
-                t.jsxIdentifier(`${prefix}-id`),
-                t.stringLiteral(uniqueId)
-              ),
-              t.jsxAttribute(
-                t.jsxIdentifier(`${prefix}-name`),
-                t.stringLiteral(elementName)
-              ),
-              t.jsxAttribute(
-                t.jsxIdentifier(`data-component-path`),
-                t.stringLiteral(filePath)
-              ),
-              t.jsxAttribute(
-                t.jsxIdentifier(`data-component-line`),
-                t.stringLiteral(line.toString())
-              ),
-              t.jsxAttribute(
-                t.jsxIdentifier(`data-component-file`),
-                t.stringLiteral(fileName)
-              ),
-              t.jsxAttribute(
-                t.jsxIdentifier(`data-component-name`),
-                t.stringLiteral(elementName)
-              ),
-            ];
-
-            if (includeProps && openingElement.attributes.length > 0) {
-              try {
-                const props: Record<string, any> = {};
-
-                openingElement.attributes.forEach((attr: any) => {
-                  if (t.isJSXAttribute(attr) && t.isJSXIdentifier(attr.name)) {
-                    const name = attr.name.name;
-                    if (attr.value) {
-                      if (t.isStringLiteral(attr.value)) {
-                        props[name] = attr.value.value;
-                      } else if (t.isJSXExpressionContainer(attr.value)) {
-                        props[name] = "[expression]";
-                      }
-                    } else {
-                      props[name] = true;
+              const attributes = jsxNode.attributes.reduce(
+                (acc: any, attr: any) => {
+                  if (attr.type === "JSXAttribute") {
+                    if (attr.value?.type === "StringLiteral") {
+                      acc[attr.name.name] = attr.value.value;
+                    } else if (
+                      attr.value?.type === "JSXExpressionContainer" &&
+                      attr.value.expression.type === "StringLiteral"
+                    ) {
+                      acc[attr.name.name] = attr.value.expression.value;
                     }
                   }
-                });
+                  return acc;
+                },
+                {}
+              );
 
-                const propsJson = JSON.stringify(props);
-                const encodedProps = encodeURIComponent(propsJson);
-
-                attributesToAdd.push(
-                  t.jsxAttribute(
-                    t.jsxIdentifier(`${prefix}-props`),
-                    t.stringLiteral(encodedProps)
-                  )
-                );
-              } catch (error) {
-                console.warn(
-                  `Failed to serialize props for ${uniqueId}:`,
-                  error
-                );
+              let textContent = "";
+              if (currentElement && currentElement.children) {
+                textContent = currentElement.children
+                  .map((child: any) => {
+                    if (child.type === "JSXText") {
+                      return child.value.trim();
+                    } else if (child.type === "JSXExpressionContainer") {
+                      if (child.expression.type === "StringLiteral") {
+                        return child.expression.value;
+                      }
+                    }
+                    return "";
+                  })
+                  .filter(Boolean)
+                  .join(" ")
+                  .trim();
               }
+
+              const content: any = {};
+              if (textContent) {
+                content.text = textContent;
+              }
+              if (attributes.placeholder) {
+                content.placeholder = attributes.placeholder;
+              }
+              if (attributes.className) {
+                content.className = attributes.className;
+              }
+
+              const line = jsxNode.loc?.start?.line ?? 0;
+              const col = jsxNode.loc?.start?.column ?? 0;
+              const dataComponentId = `${relativePath}:${line}:${col}`;
+              const fileName = nodePath.basename(id);
+
+              const legacyIds = ` data-component-path="${relativePath}" data-component-line="${line}" data-component-file="${fileName}" data-component-name="${elementName}" data-component-content="${encodeURIComponent(
+                JSON.stringify(content)
+              )}"`;
+
+              let propsAttribute = "";
+              if (includeProps && jsxNode.attributes.length > 0) {
+                try {
+                  const props: Record<string, any> = {};
+                  jsxNode.attributes.forEach((attr: any) => {
+                    if (
+                      attr.type === "JSXAttribute" &&
+                      attr.name.type === "JSXIdentifier"
+                    ) {
+                      const name = attr.name.name;
+                      if (attr.value) {
+                        if (attr.value.type === "StringLiteral") {
+                          props[name] = attr.value.value;
+                        } else if (
+                          attr.value.type === "JSXExpressionContainer"
+                        ) {
+                          props[name] = "[expression]";
+                        }
+                      } else {
+                        props[name] = true;
+                      }
+                    }
+                  });
+
+                  const propsJson = JSON.stringify(props);
+                  const encodedProps = encodeURIComponent(propsJson);
+                  propsAttribute = ` ${prefix}-props="${encodedProps}"`;
+                } catch (error) {
+                  console.warn(
+                    `Failed to serialize props for ${dataComponentId}:`,
+                    error
+                  );
+                }
+              }
+
+              magicString.appendLeft(
+                jsxNode.name.end ?? 0,
+                ` ${prefix}-id="${dataComponentId}" ${prefix}-name="${elementName}"${propsAttribute}${legacyIds}`
+              );
+
+              changedElementsCount++;
             }
-
-            openingElement.attributes.unshift(...attributesToAdd);
-
-            modified = true;
           },
         });
 
-        if (modified) {
-          const output = generate(ast, {
-            retainLines: true,
-            compact: false,
-          });
+        stats.processedFiles++;
+        stats.totalElements += changedElementsCount;
 
+        if (changedElementsCount > 0) {
           return {
-            code: output.code,
-            map: output.map,
+            code: magicString.toString(),
+            map: magicString.generateMap({hires: true}),
           };
         }
 
         return null;
       } catch (error) {
-        console.warn(`JSX Tagger failed to parse ${id}:`, error);
+        console.error(`Error processing file ${relativePath}:`, error);
+        stats.processedFiles++;
         return null;
       }
     },
