@@ -99,6 +99,18 @@ export default function jsxTagger() {
                 {}
               );
 
+              // Find className attribute line position
+              let classNameLine = null;
+              const classNameAttr = jsxNode.attributes.find(
+                (attr: any) => 
+                  attr.type === "JSXAttribute" && 
+                  attr.name.type === "JSXIdentifier" &&
+                  attr.name.name === "className"
+              );
+              if (classNameAttr && classNameAttr.loc?.start?.line) {
+                classNameLine = classNameAttr.loc.start.line;
+              }
+
               let textContent = "";
               if (currentElement && currentElement.children) {
                 textContent = currentElement.children
@@ -135,13 +147,11 @@ export default function jsxTagger() {
 
               // Add className-Line attribute if className exists
               let classNameLineAttribute = "";
-              if (attributes.className) {
-                classNameLineAttribute = ` data-classname-line="${line}"`;
+              if (attributes.className && classNameLine) {
+                classNameLineAttribute = ` data-classname-line="${classNameLine}"`;
               }
 
-              const legacyIds = ` data-component-path="${relativePath}" data-component-line="${line}" data-component-file="${fileName}" data-component-name="${elementName}" data-component-content="${encodeURIComponent(
-                JSON.stringify(content)
-              )}"${classNameLineAttribute}`;
+              const legacyIds = ` data-component-path="${relativePath}" data-component-line="${line}" data-component-file="${fileName}" data-component-name="${elementName}" ${classNameLineAttribute}`;
 
               let propsAttribute = "";
               if (includeProps && jsxNode.attributes.length > 0) {

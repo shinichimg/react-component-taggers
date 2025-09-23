@@ -1,6 +1,6 @@
 {
   "name": "react-component-taggers",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A Vite plugin that automatically injects metadata attributes into JSX/TSX elements for debugging and tooling",
   "main": "dist/index.js",
   "module": "dist/index.js",
