@@ -73,6 +73,4 @@ temp/
 package-lock.json
 
 # Examples build artifacts
-examples/*/dist/
-examples/*/build/
-examples/*/.vite/
+example/*

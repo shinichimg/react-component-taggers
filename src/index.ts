@@ -1,5 +1,5 @@
-import {parse} from "@babel/parser";
-import {walk} from "estree-walker";
+import { parse } from "@babel/parser";
+import { walk } from "estree-walker";
 import MagicString from "magic-string";
 import * as nodePath from "path";
 
@@ -102,8 +102,8 @@ export default function jsxTagger() {
               // Find className attribute line position
               let classNameLine = null;
               const classNameAttr = jsxNode.attributes.find(
-                (attr: any) => 
-                  attr.type === "JSXAttribute" && 
+                (attr: any) =>
+                  attr.type === "JSXAttribute" &&
                   attr.name.type === "JSXIdentifier" &&
                   attr.name.name === "className"
               );
@@ -147,50 +147,15 @@ export default function jsxTagger() {
 
               // Add className-Line attribute if className exists
               let classNameLineAttribute = "";
-              if (attributes.className && classNameLine) {
+              if (classNameLine) {
                 classNameLineAttribute = ` data-classname-line="${classNameLine}"`;
               }
 
               const legacyIds = ` data-component-path="${relativePath}" data-component-line="${line}" data-component-file="${fileName}" data-component-name="${elementName}" ${classNameLineAttribute}`;
-
-              let propsAttribute = "";
-              if (includeProps && jsxNode.attributes.length > 0) {
-                try {
-                  const props: Record<string, any> = {};
-                  jsxNode.attributes.forEach((attr: any) => {
-                    if (
-                      attr.type === "JSXAttribute" &&
-                      attr.name.type === "JSXIdentifier"
-                    ) {
-                      const name = attr.name.name;
-                      if (attr.value) {
-                        if (attr.value.type === "StringLiteral") {
-                          props[name] = attr.value.value;
-                        } else if (
-                          attr.value.type === "JSXExpressionContainer"
-                        ) {
-                          props[name] = "[expression]";
-                        }
-                      } else {
-                        props[name] = true;
-                      }
-                    }
-                  });
-
-                  const propsJson = JSON.stringify(props);
-                  const encodedProps = encodeURIComponent(propsJson);
-                  propsAttribute = ` ${prefix}-props="${encodedProps}"`;
-                } catch (error) {
-                  console.warn(
-                    `Failed to serialize props for ${dataComponentId}:`,
-                    error
-                  );
-                }
-              }
-
+          
               magicString.appendLeft(
                 jsxNode.name.end ?? 0,
-                ` ${prefix}-id="${dataComponentId}" ${prefix}-name="${elementName}"${propsAttribute}${legacyIds}`
+                ` ${prefix}-id="${dataComponentId}" ${prefix}-name="${elementName}"${legacyIds}`
               );
 
               changedElementsCount++;
