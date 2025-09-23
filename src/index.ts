@@ -133,9 +133,15 @@ export default function jsxTagger() {
               const dataComponentId = `${relativePath}:${line}:${col}`;
               const fileName = nodePath.basename(id);
 
+              // Add className-Line attribute if className exists
+              let classNameLineAttribute = "";
+              if (attributes.className) {
+                classNameLineAttribute = ` data-classname-line="${line}"`;
+              }
+
               const legacyIds = ` data-component-path="${relativePath}" data-component-line="${line}" data-component-file="${fileName}" data-component-name="${elementName}" data-component-content="${encodeURIComponent(
                 JSON.stringify(content)
-              )}"`;
+              )}"${classNameLineAttribute}`;
 
               let propsAttribute = "";
               if (includeProps && jsxNode.attributes.length > 0) {
