@@ -1,16 +1,15 @@
-import { parse } from "@babel/parser";
-import { walk } from "estree-walker";
+import {parse} from "@babel/parser";
+import {walk} from "estree-walker";
 import MagicString from "magic-string";
 import * as nodePath from "path";
 
 const validExtensions = new Set([".jsx", ".tsx"]);
-
+const OFFSET = 19;
 export default function jsxTagger() {
   const prefix = "data-simplify";
   const include = (id: string) =>
     validExtensions.has(nodePath.extname(id)) && !id.includes("node_modules");
   let isEnabled = true;
-  const includeProps = true;
   const stats = {
     totalFiles: 0,
     processedFiles: 0,
@@ -108,7 +107,10 @@ export default function jsxTagger() {
                   attr.name.name === "className"
               );
               if (classNameAttr && classNameAttr.loc?.start?.line) {
-                classNameLine = classNameAttr.loc.start.line;
+                classNameLine = Math.max(
+                  classNameAttr.loc.start.line - OFFSET,
+                  0
+                );
               }
 
               let textContent = "";
@@ -140,7 +142,7 @@ export default function jsxTagger() {
                 content.className = attributes.className;
               }
 
-              const line = jsxNode.loc?.start?.line ?? 0;
+              const line = Math.max(jsxNode.loc?.start?.line - OFFSET, 0);
               const col = jsxNode.loc?.start?.column ?? 0;
               const dataComponentId = `${relativePath}:${line}:${col}`;
               const fileName = nodePath.basename(id);
@@ -152,7 +154,7 @@ export default function jsxTagger() {
               }
 
               const legacyIds = ` data-component-path="${relativePath}" data-component-line="${line}" data-component-file="${fileName}" data-component-name="${elementName}" ${classNameLineAttribute}`;
-          
+
               magicString.appendLeft(
                 jsxNode.name.end ?? 0,
                 ` ${prefix}-id="${dataComponentId}" ${prefix}-name="${elementName}"${legacyIds}`
